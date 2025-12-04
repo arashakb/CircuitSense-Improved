@@ -1,0 +1,40 @@
+# Training dependencies for CircuitSense fine-tuning
+# Install with: pip install -r training/requirements_training.txt
+
+# Core ML frameworks
+torch>=2.1.0
+torchvision>=0.16.0
+
+# HuggingFace ecosystem
+transformers>=4.37.0
+peft>=0.7.0
+trl>=0.7.0
+datasets>=2.16.0
+accelerate>=0.25.0
+
+# Quantization (for QLoRA)
+bitsandbytes>=0.41.0
+
+# Flash Attention (optional but recommended)
+# Note: Requires CUDA and may need manual installation
+# flash-attn>=2.4.0
+
+# Logging and experiment tracking
+wandb>=0.16.0
+tensorboard>=2.15.0
+
+# Distributed training (optional)
+deepspeed>=0.12.0
+
+# Utilities
+pyyaml>=6.0
+tqdm>=4.65.0
+pillow>=10.0.0
+
+# Evaluation metrics
+sympy>=1.12  # For equation equivalence checking
+nltk>=3.8    # For BLEU/ROUGE metrics (optional)
+
+# Already in base requirements but ensure compatible versions
+numpy>=1.24.0
+scipy>=1.11.0

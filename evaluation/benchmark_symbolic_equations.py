@@ -1,10 +1,17 @@
 import os
-import google.generativeai as genai
 try:
     from dotenv import load_dotenv
 except Exception:
     def load_dotenv(*args, **kwargs):
         return None
+
+# Optional Google Gemini import - only needed when using Gemini
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except Exception:
+    genai = None
+    GEMINI_AVAILABLE = False
 import json
 from PIL import Image
 import base64
@@ -47,6 +54,15 @@ def _b64_image_from_path(image_path: Path) -> Tuple[str, str]:
 
 class _GeminiVisionClient:
     def __init__(self, model_name: str, temperature: float = 0.1):
+        if not GEMINI_AVAILABLE or genai is None:
+            raise RuntimeError("google.generativeai package not installed. Install with: pip install google-generativeai")
+        # Configure API key if not already configured
+        api_key = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY') or ''
+        if api_key:
+            try:
+                genai.configure(api_key=api_key)
+            except Exception:
+                pass  # May already be configured
         self.model = genai.GenerativeModel(model_name, generation_config={"temperature": temperature})
 
     def infer(self, prompt: str, image_path: Path) -> str:
@@ -165,11 +181,15 @@ class _OpenRouterVisionClient:
 # Load environment variables
 load_dotenv()
 
-# Configure the Gemini API
-api_key = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY') or ''
-if not api_key:
-    raise RuntimeError("Missing GOOGLE_API_KEY (or GEMINI_API_KEY) for Google Gemini")
-genai.configure(api_key=api_key)
+# Configure the Gemini API (only if available and needed)
+# This will be configured lazily when actually using Gemini
+if GEMINI_AVAILABLE:
+    api_key = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY') or ''
+    if api_key:
+        try:
+            genai.configure(api_key=api_key)
+        except Exception:
+            pass  # Configuration will happen later if needed
 
 # Additional API variables (read from environment by default)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
@@ -211,7 +231,16 @@ class SymbolicEquationBenchmark:
         self.model_name = model_name or ''
         self.temperature = temperature
         # Backward compatibility: keep self.model for gemini, but prefer client abstraction
-        self.model = genai.GenerativeModel('gemini-2.5-pro-preview-06-05', generation_config={"temperature": temperature}) if (init_model and self.model_provider == 'gemini') else None
+        self.model = None
+        if init_model and self.model_provider == 'gemini':
+            if GEMINI_AVAILABLE and genai is not None:
+                try:
+                    api_key = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY') or ''
+                    if api_key:
+                        genai.configure(api_key=api_key)
+                    self.model = genai.GenerativeModel('gemini-2.5-pro-preview-06-05', generation_config={"temperature": temperature})
+                except Exception:
+                    self.model = None
         self.client = self._build_client(self.model_provider, self.model_name, temperature) if init_model else None
         self.results = []
 

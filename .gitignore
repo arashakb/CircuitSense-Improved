@@ -42,6 +42,7 @@ Thumbs.db
 datasets/*
 *.json
 ppm_construction/data_syn/logs/*.log
+ppm_construction/data_syn/data/*.txt
 TIMEOUT*.md
 test.py
 SEPARATE*
@@ -51,7 +52,8 @@ create_equation_derivation*
 backup_rule*
 inference/
 scripts/sctrip*
-
+results/
+outputs/
 # Temporary files
 *.tmp
 *.temp

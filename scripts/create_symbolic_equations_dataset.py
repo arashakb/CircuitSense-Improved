@@ -398,58 +398,59 @@ def create_symbolic_equations_dataset(input_dir='datasets/mllm_level1_v7'):
 
             question_counter += 1
                                                                     
-        nodal_equations = result.get('nodal_equations', {})
-        s_domain = nodal_equations.get('s_domain', '')
-        
-        if s_domain:
-            total_nodal_analysis_circuits += 1
-            if not is_valid_data(s_domain, 'nodal_analysis'):
-                skipped_nodal_analysis += 1
-                print(f"Skipping nodal analysis for circuit {circuit_id}: contains error")
-                continue
-            try:                                                               
-                equations = process_circuit_matrix(s_domain)
-                if equations:
-                    print(f"Extracted {len(equations)} equations from circuit {circuit_id}")
-                    total_nodal_equations += len(equations)
-                                                       
-                    for eq_type, eq_str, eq_obj in equations:
-                                                
-                        question_folder = dataset_dir / f'q{question_counter}'
-                        question_folder.mkdir(exist_ok=True)                                                        
-                        question_text = create_individual_equation_question(eq_type)
-                        question_file = question_folder / f'q{question_counter}_question.txt'
-                        with open(question_file, 'w') as f:
-                            f.write(question_text)
-                                                 
-                        answer_file = question_folder / f'q{question_counter}_ta.txt'
-                        with open(answer_file, 'w') as f:
-                            f.write(eq_str)
-                                                                      
-                        netlist_file = question_folder / f'q{question_counter}_netlist.txt'
-                        with open(netlist_file, 'w') as f:
-                            f.write(cleaned_netlist)
-                                                              
-                        target_image = question_folder / f'q{question_counter}_image.png'
-                        if copy_circuit_image(circuit_id, target_image, input_dir):
-                            print(f"Created q{question_counter}: {eq_type} equation for circuit {circuit_id}")
-                        else:
-                            missing_images += 1
-                        
-                        question_counter += 1
-                else:
-                    print(f"No equations extracted from circuit {circuit_id}")
-                    skipped_nodal_analysis += 1
-            except Exception as e:
-                print(f"Error extracting equations from circuit {circuit_id}: {e}")
-                skipped_nodal_analysis += 1
-                continue
+        # NODAL ANALYSIS SECTION - COMMENTED OUT TO ONLY GENERATE TRANSFER FUNCTION QUESTIONS
+        # nodal_equations = result.get('nodal_equations', {})
+        # s_domain = nodal_equations.get('s_domain', '')
+        # 
+        # if s_domain:
+        #     total_nodal_analysis_circuits += 1
+        #     if not is_valid_data(s_domain, 'nodal_analysis'):
+        #         skipped_nodal_analysis += 1
+        #         print(f"Skipping nodal analysis for circuit {circuit_id}: contains error")
+        #         continue
+        #     try:                                                               
+        #         equations = process_circuit_matrix(s_domain)
+        #         if equations:
+        #             print(f"Extracted {len(equations)} equations from circuit {circuit_id}")
+        #             total_nodal_equations += len(equations)
+        #                                                
+        #             for eq_type, eq_str, eq_obj in equations:
+        #                                         
+        #                 question_folder = dataset_dir / f'q{question_counter}'
+        #                 question_folder.mkdir(exist_ok=True)                                                        
+        #                 question_text = create_individual_equation_question(eq_type)
+        #                 question_file = question_folder / f'q{question_counter}_question.txt'
+        #                 with open(question_file, 'w') as f:
+        #                     f.write(question_text)
+        #                                              
+        #                 answer_file = question_folder / f'q{question_counter}_ta.txt'
+        #                 with open(answer_file, 'w') as f:
+        #                     f.write(eq_str)
+        #                                                                       
+        #                 netlist_file = question_folder / f'q{question_counter}_netlist.txt'
+        #                 with open(netlist_file, 'w') as f:
+        #                     f.write(cleaned_netlist)
+        #                                                              
+        #                 target_image = question_folder / f'q{question_counter}_image.png'
+        #                 if copy_circuit_image(circuit_id, target_image, input_dir):
+        #                     print(f"Created q{question_counter}: {eq_type} equation for circuit {circuit_id}")
+        #                 else:
+        #                     missing_images += 1
+        #                 
+        #                 question_counter += 1
+        #         else:
+        #             print(f"No equations extracted from circuit {circuit_id}")
+        #             skipped_nodal_analysis += 1
+        #     except Exception as e:
+        #         print(f"Error extracting equations from circuit {circuit_id}: {e}")
+        #         skipped_nodal_analysis += 1
+        #         continue
     
                    
     print(f"\nDataset creation complete!")
     print(f"Total questions created: {question_counter - 1}")
     print(f"Transfer functions: {total_transfer_functions} total, {total_transfer_functions - skipped_transfer_functions} valid, {skipped_transfer_functions} skipped")
-    print(f"Nodal analysis: {total_nodal_analysis_circuits} circuits processed, {total_nodal_equations} individual equations created, {skipped_nodal_analysis} circuits skipped")
+    # print(f"Nodal analysis: {total_nodal_analysis_circuits} circuits processed, {total_nodal_equations} individual equations created, {skipped_nodal_analysis} circuits skipped")
     print(f"Missing images: {missing_images}")
     print(f"Dataset folder: {dataset_dir.absolute()}")
 

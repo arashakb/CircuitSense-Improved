@@ -1,0 +1,86 @@
+# Qwen2-VL LoRA/QLoRA Fine-tuning Configuration for CircuitSense
+# Usage: PYTHONPATH=. python training/train.py --config training/configs/qwen2vl_lora.yaml
+
+# Model configuration
+model:
+  name: "Qwen/Qwen2-VL-7B-Instruct"  # or "Qwen/Qwen2-VL-72B-Instruct" for larger model
+  torch_dtype: "bfloat16"             # bfloat16 recommended for training
+  use_flash_attention: false          # Disable Flash Attention 2 (requires flash_attn package)
+  trust_remote_code: true             # Required for Qwen2-VL
+
+# Quantization configuration (for QLoRA)
+quantization:
+  enabled: true                       # Set to false for standard LoRA
+  bits: 4                             # 4-bit quantization
+  quant_type: "nf4"                   # NormalFloat4 quantization
+  double_quant: true                  # Use double quantization
+  compute_dtype: "bfloat16"           # Compute dtype for quantized layers
+
+# LoRA configuration
+lora:
+  r: 64                               # LoRA rank (increase for more capacity)
+  alpha: 128                          # LoRA alpha (scaling factor)
+  dropout: 0.05                       # LoRA dropout
+  target_modules:                     # Modules to apply LoRA
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"                        # Don't train bias
+  task_type: "CAUSAL_LM"              # Task type for PEFT
+
+# Training configuration
+training:
+  output_dir: "outputs/qwen2vl-circuitsense"
+  num_epochs: 3
+  per_device_train_batch_size: 2      # Adjust based on GPU memory
+  per_device_eval_batch_size: 2
+  gradient_accumulation_steps: 8      # Effective batch size = 2 * 8 = 16
+  learning_rate: 2.0e-4               # Learning rate for LoRA
+  weight_decay: 0.01
+  warmup_ratio: 0.03                  # Warmup steps as ratio of total
+  lr_scheduler_type: "cosine"         # Learning rate schedule
+  max_seq_length: 4096                # Maximum sequence length (increased to handle longer sequences)
+  gradient_checkpointing: true        # Save memory with gradient checkpointing
+  optim: "adamw_torch"                # Optimizer (or "adamw_8bit" for memory savings)
+  fp16: false                         # Use bf16 instead
+  bf16: true                          # BFloat16 training
+  max_grad_norm: 1.0                  # Gradient clipping
+  seed: 42                            # Random seed
+
+# Data configuration
+data:
+  data_dir: "datasets/training_data"  # Path to dataset directory
+  dataset_type: "generated"           # "generated" or "huggingface"
+  task_type: "both"                   # "equations", "qa", or "both" (for generated)
+  train_split: 0.9                    # Train/val split ratio
+  augment_questions: true             # Use question template augmentation (for generated)
+
+# Logging and checkpointing
+logging:
+  report_to: "wandb"                  # "wandb", "tensorboard", or "none"
+  project_name: "circuitsense-finetune"
+  run_name: null                      # Auto-generated if null
+  logging_steps: 10                   # Log every N steps
+  save_strategy: "steps"              # "steps" or "epoch"
+  save_steps: 500                     # Save checkpoint every N steps
+  save_total_limit: 3                 # Keep only N recent checkpoints
+  eval_strategy: "steps"              # "steps" or "epoch"
+  eval_steps: 500                     # Evaluate every N steps
+  load_best_model_at_end: true        # Load best checkpoint at end
+  metric_for_best_model: "eval_loss"  # Metric to determine best model
+
+# DeepSpeed configuration (for multi-GPU training)
+deepspeed:
+  enabled: false                      # Set to true for multi-GPU
+  config_file: null                   # Path to deepspeed config, or use preset
+  stage: 2                            # ZeRO stage (2 or 3)
+
+# Evaluation configuration
+evaluation:
+  do_eval: true                       # Run evaluation during training
+  eval_on_start: false                # Evaluate before training
+  prediction_loss_only: false         # Also compute other metrics
