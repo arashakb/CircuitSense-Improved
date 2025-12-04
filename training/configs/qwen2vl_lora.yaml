@@ -1,16 +1,40 @@
 # Qwen2-VL LoRA/QLoRA Fine-tuning Configuration for CircuitSense
+# Optimized for NVIDIA A6000 (48GB VRAM)
 # Usage: PYTHONPATH=. python training/train.py --config training/configs/qwen2vl_lora.yaml
+#
+# A6000 Optimizations (Qwen2-VL specific):
+# - Batch size: 2 (vision-language models need smaller batches due to vision encoder)
+# - LoRA rank: 64 (reduced to save memory, can increase to 128 if memory allows)
+# - Gradient accumulation: 8 (effective batch size = 2 * 8 = 16)
+# - Max seq length: 2048 (reduced from 4096 to save memory)
+# - 8-bit optimizer: Saves ~2GB memory
+# - Gradient checkpointing: Enabled for memory efficiency
+#
+# Memory Usage Estimate (Qwen2-VL):
+# - Base model (bf16): ~14GB
+# - Vision encoder: ~4-6GB
+# - LoRA weights (r=64): ~0.3GB
+# - Activations (batch=2, seq=2048): ~15-20GB
+# - Optimizer states: ~1-2GB
+# - Total: ~35-42GB (safe margin on 48GB GPU)
+#
+# If still OOM, try:
+# 1. Enable QLoRA (quantization.enabled: true) - saves ~50% memory
+# 2. Reduce batch_size to 1
+# 3. Reduce max_seq_length to 1024
+# 4. Reduce LoRA rank to 32
 
 # Model configuration
 model:
   name: "Qwen/Qwen2-VL-7B-Instruct"  # or "Qwen/Qwen2-VL-72B-Instruct" for larger model
   torch_dtype: "bfloat16"             # bfloat16 recommended for training
-  use_flash_attention: false          # Disable Flash Attention 2 (requires flash_attn package)
+  use_flash_attention: true          # Disable Flash Attention 2 (requires flash_attn package)
   trust_remote_code: true             # Required for Qwen2-VL
 
 # Quantization configuration (for QLoRA)
 quantization:
-  enabled: true                       # Set to false for standard LoRA
+  enabled: false                       # Set to true to enable QLoRA (saves ~50% memory)
+                                        # Keep false for standard LoRA (better quality)
   bits: 4                             # 4-bit quantization
   quant_type: "nf4"                   # NormalFloat4 quantization
   double_quant: true                  # Use double quantization
@@ -18,9 +42,9 @@ quantization:
 
 # LoRA configuration
 lora:
-  r: 64                               # LoRA rank (increase for more capacity)
-  alpha: 128                          # LoRA alpha (scaling factor)
-  dropout: 0.05                       # LoRA dropout
+  r: 64                               # LoRA rank (reduced from 128 to save memory)
+  alpha: 128                          # LoRA alpha (typically 2x rank for good scaling)
+  dropout: 0.05                       # Small dropout for regularization
   target_modules:                     # Modules to apply LoRA
     - "q_proj"
     - "k_proj"
@@ -32,32 +56,33 @@ lora:
   bias: "none"                        # Don't train bias
   task_type: "CAUSAL_LM"              # Task type for PEFT
 
-# Training configuration
+# Training configuration (optimized for A6000 48GB VRAM)
 training:
   output_dir: "outputs/qwen2vl-circuitsense"
-  num_epochs: 3
-  per_device_train_batch_size: 2      # Adjust based on GPU memory
-  per_device_eval_batch_size: 2
+  num_epochs: 10
+  per_device_train_batch_size: 2      # Reduced for Qwen2-VL (images + vision encoder = high memory)
+  per_device_eval_batch_size: 2       # Match train batch size
   gradient_accumulation_steps: 8      # Effective batch size = 2 * 8 = 16
-  learning_rate: 2.0e-4               # Learning rate for LoRA
+  learning_rate: 2.0e-4               # Learning rate for LoRA (good default)
   weight_decay: 0.01
   warmup_ratio: 0.03                  # Warmup steps as ratio of total
   lr_scheduler_type: "cosine"         # Learning rate schedule
-  max_seq_length: 4096                # Maximum sequence length (increased to handle longer sequences)
-  gradient_checkpointing: true        # Save memory with gradient checkpointing
-  optim: "adamw_torch"                # Optimizer (or "adamw_8bit" for memory savings)
+  max_seq_length: 2048                # Reduced from 4096 to save memory (can increase if needed)
+  gradient_checkpointing: true        # Essential for memory efficiency
+  optim: "adamw_8bit"                 # 8-bit optimizer saves ~2GB memory
   fp16: false                         # Use bf16 instead
-  bf16: true                          # BFloat16 training
+  bf16: true                          # BFloat16 training (better than fp16)
   max_grad_norm: 1.0                  # Gradient clipping
   seed: 42                            # Random seed
 
 # Data configuration
 data:
   data_dir: "datasets/training_data"  # Path to dataset directory
-  dataset_type: "generated"           # "generated" or "huggingface"
-  task_type: "both"                   # "equations", "qa", or "both" (for generated)
+  dataset_type: "auto"                # "auto", "qa_folder", "generated", or "huggingface"
+                                      # "auto" detects QA folder structure (q1/, q2/, etc.) automatically
+  task_type: "both"                   # "equations", "qa", or "both" (for generated dataset type)
   train_split: 0.9                    # Train/val split ratio
-  augment_questions: true             # Use question template augmentation (for generated)
+  augment_questions: true             # Use question template augmentation (for generated dataset type)
 
 # Logging and checkpointing
 logging:

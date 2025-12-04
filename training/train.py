@@ -26,7 +26,13 @@ from transformers import (
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import Trainer
 
-from training.data import CircuitSenseDataset, CircuitSenseCollator, CircuitSenseHFDataset
+from training.data import (
+    CircuitSenseDataset,
+    CircuitSenseCollator,
+    CircuitSenseHFDataset,
+    QAFolderDataset,
+    load_qa_folder_data,
+)
 
 # Setup logging
 logging.basicConfig(
@@ -149,15 +155,44 @@ def load_model_and_processor(config: dict):
     if bnb_config is not None:
         model = prepare_model_for_kbit_training(
             model,
-            use_gradient_checkpointing=config.get("training", {}).get("gradient_checkpointing", True),
+            use_gradient_checkpointing=False,  # Enable after LoRA setup
         )
 
-    # Setup LoRA
+    # Setup LoRA BEFORE enabling gradient checkpointing
     lora_config = setup_lora(config)
     model = get_peft_model(model, lora_config)
 
+    # Enable gradient checkpointing AFTER LoRA setup (if requested)
+    if config.get("training", {}).get("gradient_checkpointing", True):
+        if hasattr(model, "gradient_checkpointing_enable"):
+            model.gradient_checkpointing_enable()
+        elif hasattr(model, "model") and hasattr(model.model, "gradient_checkpointing_enable"):
+            model.model.gradient_checkpointing_enable()
+
+    # Enable input gradients for vision-language models
+    # This allows gradients to flow through even when vision encoder is frozen
+    try:
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+        elif hasattr(model, "model") and hasattr(model.model, "enable_input_require_grads"):
+            model.model.enable_input_require_grads()
+    except Exception as e:
+        logger.warning(f"Could not enable input require grads (may be OK): {e}")
+
+    # Ensure model is in training mode
+    model.train()
+    
+    # Verify LoRA adapters are properly set up and trainable
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    if trainable_params == 0:
+        logger.error("No trainable parameters found! LoRA adapters may not be properly configured.")
+        raise RuntimeError("No trainable parameters in model. Check LoRA configuration.")
+
     # Print trainable parameters
     model.print_trainable_parameters()
+    
+    logger.info(f"Model training mode: {model.training}")
+    logger.info(f"Total trainable parameters: {trainable_params:,}")
 
     return model, processor
 
@@ -165,17 +200,44 @@ def load_model_and_processor(config: dict):
 def load_datasets(config: dict):
     """Load training and validation datasets.
 
-    Supports two dataset types:
+    Supports three dataset types:
+    - "qa_folder": Auto-detected QA folder structure (q1/, q2/, etc.)
     - "generated": Use CircuitSenseDataset for locally generated data
     - "huggingface": Use CircuitSenseHFDataset for HuggingFace data
     """
     data_config = config.get("data", {})
-    data_dir = data_config.get("data_dir", "datasets/training_data")
-    dataset_type = data_config.get("dataset_type", "generated")
+    data_dir = Path(data_config.get("data_dir", "datasets/training_data"))
+    dataset_type = data_config.get("dataset_type", "auto")  # Default to auto-detect
 
     logger.info(f"Loading datasets from: {data_dir} (type: {dataset_type})")
 
-    if dataset_type == "huggingface":
+    # Auto-detect QA folder structure if type is "auto"
+    if dataset_type == "auto":
+        # Check if directory contains q* folders (QA folder structure)
+        q_folders = [
+            d
+            for d in data_dir.iterdir()
+            if d.is_dir() and d.name.startswith("q") and d.name[1:].isdigit()
+        ]
+        if q_folders:
+            logger.info(f"Auto-detected QA folder structure ({len(q_folders)} question folders)")
+            dataset_type = "qa_folder"
+        # Check if labels.json exists (generated structure)
+        elif (data_dir / "labels.json").exists():
+            logger.info("Auto-detected generated dataset structure")
+            dataset_type = "generated"
+        else:
+            logger.warning("Could not auto-detect dataset type, defaulting to 'generated'")
+            dataset_type = "generated"
+
+    if dataset_type == "qa_folder":
+        # Use QA folder dataset loader
+        train_dataset, val_dataset = load_qa_folder_data(
+            data_dir=data_dir,
+            train_ratio=data_config.get("train_split", 0.9),
+            seed=config.get("training", {}).get("seed", 42),
+        )
+    elif dataset_type == "huggingface":
         # Use HuggingFace dataset loader
         train_dataset = CircuitSenseHFDataset(
             data_dir=data_dir,

@@ -24,7 +24,7 @@ Usage:
     PYTHONPATH=. python evaluation/evaluate_qwen2vl.py \
         --model outputs/circuitsense_finetune/final_model \
         --dataset_path datasets/symbolic_level15_27 \
-        --mode evaluation \
+        --mode full \
         --max_questions 50
 """
 
@@ -75,7 +75,7 @@ class Qwen2VLEvaluator:
         torch_dtype: torch.dtype = torch.bfloat16,
         use_flash_attention: bool = True,
         temperature: float = 0.1,
-        max_new_tokens: int = 512,
+        max_new_tokens: int = 1024,
     ):
         """Initialize evaluator.
 
@@ -923,7 +923,7 @@ def parse_args():
     parser.add_argument(
         "--max_new_tokens",
         type=int,
-        default=512,
+        default=1024,
         help="Maximum new tokens to generate",
     )
 

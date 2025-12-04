@@ -344,8 +344,10 @@ def create_symbolic_equations_dataset(input_dir='datasets/mllm_level1_v7'):
         return
     
     with open(json_file, 'r') as f:
-        data = json.load(f)                           
-    dataset_dir = Path('datasets/symbolic_level15_27')
+        data = json.load(f)
+
+    # Use the same directory name as input_dir but with a "_QA" suffix
+    dataset_dir = input_dir.parent / f"{input_dir.name}_QA"
     dataset_dir.mkdir(exist_ok=True)
     
                                  

@@ -239,6 +239,157 @@ class CircuitSenseDataset(Dataset):
         }
 
 
+class QAFolderDataset(Dataset):
+    """Dataset for QA folder structure (q1/, q2/, etc.).
+
+    This dataset loads data from folders where each question is in its own folder:
+    - q1/q1_image.png
+    - q1/q1_question.txt
+    - q1/q1_ta.txt (target answer)
+    - q1/q1_netlist.txt (optional)
+
+    Args:
+        data_dir: Path to the dataset directory containing q* folders
+        split: One of "train" or "val"
+        train_ratio: Ratio of data to use for training (default: 0.9)
+        seed: Random seed for reproducibility
+    """
+
+    def __init__(
+        self,
+        data_dir: str | Path,
+        split: str = "train",
+        train_ratio: float = 0.9,
+        seed: int = 42,
+    ):
+        self.data_dir = Path(data_dir)
+        self.split = split
+        self.train_ratio = train_ratio
+
+        # Set random seed for reproducible splits
+        random.seed(seed)
+
+        # Load data
+        self.samples = self._load_data()
+
+        # Split into train/val
+        random.shuffle(self.samples)
+        split_idx = int(len(self.samples) * train_ratio)
+        if split == "train":
+            self.samples = self.samples[:split_idx]
+        else:
+            self.samples = self.samples[split_idx:]
+
+        # TRL SFTTrainer compatibility
+        self.column_names = None
+
+    def _load_data(self) -> list[dict[str, Any]]:
+        """Load all question folders."""
+        samples = []
+
+        # Find all q* folders
+        question_folders = sorted(
+            [
+                d
+                for d in self.data_dir.iterdir()
+                if d.is_dir() and d.name.startswith("q") and d.name[1:].isdigit()
+            ],
+            key=lambda x: int(x.name[1:]),  # Sort by question number
+        )
+
+        for q_folder in question_folders:
+            q_name = q_folder.name
+
+            # Find image file (could be .png, .jpg, etc.)
+            image_path = None
+            for ext in [".png", ".jpg", ".jpeg"]:
+                img_file = q_folder / f"{q_name}_image{ext}"
+                if img_file.exists():
+                    image_path = img_file
+                    break
+
+            if image_path is None:
+                continue
+
+            # Load question
+            question_file = q_folder / f"{q_name}_question.txt"
+            if not question_file.exists():
+                continue
+
+            with open(question_file, "r", encoding="utf-8") as f:
+                question = f.read().strip()
+
+            # Load target answer
+            answer_file = q_folder / f"{q_name}_ta.txt"
+            if not answer_file.exists():
+                continue
+
+            with open(answer_file, "r", encoding="utf-8") as f:
+                answer = f.read().strip()
+
+            # Skip empty answers
+            if not answer:
+                continue
+
+            # Load netlist if available (optional metadata)
+            netlist = None
+            netlist_file = q_folder / f"{q_name}_netlist.txt"
+            if netlist_file.exists():
+                with open(netlist_file, "r", encoding="utf-8") as f:
+                    netlist = f.read().strip()
+
+            samples.append({
+                "type": "equation",  # Transfer function questions
+                "circuit_id": q_name,
+                "image_path": str(image_path),
+                "question": question,
+                "answer": answer,  # Keep raw answer, will format in __getitem__
+                "metadata": {
+                    "netlist": netlist,
+                }
+            })
+
+        return samples
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        """Get a sample in Qwen2-VL conversation format."""
+        sample = self.samples[idx]
+
+        # Format answer - if it's a transfer function, wrap it nicely
+        answer = sample["answer"]
+        # If answer doesn't start with "The transfer function", add it
+        if not answer.lower().startswith("the transfer function"):
+            answer = f"The transfer function is: {answer}"
+
+        # Build conversation in Qwen2-VL format
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": sample["image_path"]},
+                    {"type": "text", "text": sample["question"]},
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": answer},
+                ],
+            },
+        ]
+
+        return {
+            "messages": messages,
+            "image_path": sample["image_path"],
+            "task_type": sample["type"],
+            "circuit_id": sample["circuit_id"],
+            "metadata": sample.get("metadata", {}),
+        }
+
+
 def load_circuitsense_data(
     data_dir: str | Path,
     task_type: str = "both",
@@ -267,6 +418,38 @@ def load_circuitsense_data(
     val_dataset = CircuitSenseDataset(
         data_dir=data_dir,
         task_type=task_type,
+        split="val",
+        train_ratio=train_ratio,
+        seed=seed,
+    )
+
+    return train_dataset, val_dataset
+
+
+def load_qa_folder_data(
+    data_dir: str | Path,
+    train_ratio: float = 0.9,
+    seed: int = 42,
+) -> tuple[QAFolderDataset, QAFolderDataset]:
+    """Load QA folder dataset and return train/val datasets.
+
+    Args:
+        data_dir: Path to the dataset directory containing q* folders
+        train_ratio: Ratio of data for training
+        seed: Random seed
+
+    Returns:
+        Tuple of (train_dataset, val_dataset)
+    """
+    train_dataset = QAFolderDataset(
+        data_dir=data_dir,
+        split="train",
+        train_ratio=train_ratio,
+        seed=seed,
+    )
+
+    val_dataset = QAFolderDataset(
+        data_dir=data_dir,
         split="val",
         train_ratio=train_ratio,
         seed=seed,
